@@ -2,6 +2,8 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Set the LCD address to 0x27 for a 16 chars and 2 line display
+
 // varibles for solar panels output
 int solar_voltage_pin = 4;  // ADC pin 4 for the measure resistor
 int solar_voltage_drop_pin = 5; // ADC pin 5 for the voltage drop 
@@ -36,20 +38,20 @@ int servoPanPos = 700;  // old servo tilt position
 int newServoPanPos; // new servo tilt position
 
 // Variables for the photodiodes
-int tiltUp = 0; // potentiometer wiper (middle terminal) connected to analog pin 0?
-int tiltDown = 1; // potentiometer wiper (middle terminal) connected to analog pin 1?
-int panLeft = 2;  // potentiometer wiper (middle terminal) connected to analog pin 2?
-int panRight = 3; // potentiometer wiper (middle terminal) connected to analog pin 3?
+int tiltUp = 0; // photodiode ADC pin 0
+int tiltDown = 1; // photodiode ADC pin 1
+int panLeft = 2;  // photodiode ADC pin 2
+int panRight = 3; // photodiode ADC pin 3
 
 float tiltUpVal = 0;  // variable to store the value read
 float tiltDownVal = 0;  // variable to store the value read
 float panLeftVal = 0; // variable to store the value read
 float panRightVal = 0;  // variable to store the value read
 
-float newTiltUpVal = 0; // variable to store the new
-float newTiltDownVal = 0;
-float newPanLeftVal = 0;
-float newPanRightVal = 0;
+float newTiltUpVal = 0; // variable to store the new value
+float newTiltDownVal = 0; // variable to store the new value
+float newPanLeftVal = 0; // variable to store the new value
+float newPanRightVal = 0; // variable to store the new value
 
 // variables for storing in eeprom
 // uint16_t eepromAddr = 0;
@@ -78,13 +80,10 @@ int hourCounter;
 
 bool isItDay = false;
 
-// global variable to count the number of overflows
-//volatile uint16_t tot_overflow;
-
 // Master to slave instruction packet to move the servo. 512 is the center value for both tilt and pan servo.
 void moveServoToPos(byte servoID, int servoPos){
   byte bytePosHigh = servoPos >> 8; // throw the 8 least sigificant bits away, so only the 2 most significant bits are left.
-  byte bytePosLow = servoPos % 256; // ??
+  byte bytePosLow = servoPos % 256; // use modulus 256 to get the 8 bit remainder
   byte checkSum = ~lowByte(servoID + 0x05 + 0x03 + 0x1E + bytePosLow + bytePosHigh); // Check Sum = ~ ( ID + Length + Instruction + Parameter1 + … Parameter N) - lowByte is cause if number calculated is higher than 255 it will only choose the lowByte
   digitalWrite(3, HIGH); // set RS-485 into transmitting mode
   delay(10);
@@ -98,50 +97,48 @@ void moveServoToPos(byte servoID, int servoPos){
   Serial.write(bytePosHigh); // Parameter3 - Highest byte of Goal Position
   Serial.write(checkSum); // Check sum
   Serial.flush(); // to be sure that all that is written to serial is send
-  digitalWrite(3, LOW); // set RS-485 into recieving mode
+  digitalWrite(3, LOW); // set RS-485 into receiving mode
   delay(10);
 }
 
 String panpos_convert(int panpos){
   panpos_direction = "error";
   
-  panpos_degree = (panpos * -0.28846154) + 237.7;
+  panpos_degree = (panpos * -0.28846154) + 237.7; // formula for converting servo pan position to degrees.
 
-  if (panpos_degree > -22.5 and panpos_degree < 22.5){
+  if (panpos_degree > -22.5 and panpos_degree < 22.5){ // if statement converting degrees to direction
   panpos_direction = "E";
   }
-  if (panpos_degree > 22.5 and panpos_degree < 67.5){
+  if (panpos_degree > 22.5 and panpos_degree < 67.5){ // if statement converting degrees to direction
   panpos_direction = "SE";
   }
-  if (panpos_degree > 67.5 and panpos_degree < 112.5){
+  if (panpos_degree > 67.5 and panpos_degree < 112.5){ // if statement converting degrees to direction
   panpos_direction = "S";
   }
-  if (panpos_degree > 112.5 and panpos_degree < 157.5){
+  if (panpos_degree > 112.5 and panpos_degree < 157.5){ // if statement converting degrees to direction
   panpos_direction = "SW";
   }
-  if (panpos_degree > 157.5 and panpos_degree < 202.5){
+  if (panpos_degree > 157.5 and panpos_degree < 202.5){ // if statement converting degrees to direction
   panpos_direction = "W";
   }
   return panpos_direction;  
   }
   
 int tiltpos_convert(int tiltpos){
-  tiltpos_degree = (tiltpos * 0.28846154) - 57.7;
+  tiltpos_degree = (tiltpos * 0.28846154) - 57.7; // formula for converting servo tilt position to degrees.
   return tiltpos_degree;  
   }
 
 void setup() {
-  // put your setup code here, to run once:
   pinMode(3, OUTPUT); // Sets pin2 to be RTS (Request To Send) pin. If HIGH transmit. If LOW receive.
   pinMode(LED_BUILTIN, OUTPUT); // set built in LED to an output. Used to debug the code.
 
   Serial.begin(57143); // Begins serial communication to stream to the RX-28's See manual pg. 23 about baudrate. Set lower if causing problems or to 57143.
   Serial.flush(); // to be sure that all that is written to serial is send
 
-  moveServoToPos(servoTiltID0, startServoTiltPos);
-  moveServoToPos(servoPanID1, startServoPanPos);
+  moveServoToPos(servoTiltID0, startServoTiltPos); // move servo to pan start position
+  moveServoToPos(servoPanID1, startServoPanPos);  // move servo to tilt start position
   
-  LiquidCrystal_I2C lcd(0x27, 16, 2); // Set the LCD address to 0x27 for a 16 chars and 2 line display
   lcd.begin(); // initialize the LCD
   lcd.backlight(); // turn on the backlight
   lcd.clear();  // clears the display
@@ -168,24 +165,24 @@ void loop() {
   solar_voltage_adc_value = analogRead(solar_voltage_pin);              // read the solar panel voltage output
   solar_voltage_drop_adc_value = analogRead(solar_voltage_drop_pin);    // read the solar panel voltage drop of the mesaure resistor output  // amplifered with 45 times
 
+  // Filter to smoothen the sensor values
+  newTiltUpVal = (0.95 * newTiltUpVal) + (0.05 * tiltUpVal); // low pass filter to smoothen the value
+  newTiltDownVal = (0.95 * newTiltDownVal) + (0.05 * tiltDownVal); // low pass filter to smoothen the value
+  newPanLeftVal = (0.95 * newPanLeftVal) + (0.05 * panLeftVal);  // low pass filter to smoothen the value
+  newPanRightVal = (0.95 * newPanRightVal) + (0.05 * panRightVal); // low pass filter to smoothen the value
+
   //solar panels output
-  new_solar_voltage_adc_value = (0.95 * new_solar_voltage_adc_value) + (0.05 * solar_voltage_adc_value); //FILTER
-  new_solar_voltage_drop_adc_value = (0.95 * new_solar_voltage_drop_adc_value) + (0.05 * solar_voltage_drop_adc_value);  //FILTER
+  new_solar_voltage_adc_value = (0.95 * new_solar_voltage_adc_value) + (0.05 * solar_voltage_adc_value); // low pass filter to smoothen the value
+  new_solar_voltage_drop_adc_value = (0.95 * new_solar_voltage_drop_adc_value) + (0.05 * solar_voltage_drop_adc_value);  // low pass filter to smoothen the value
 
-  new_solar_voltage_value = new_solar_voltage_adc_value * 0.004887586;            //CALCULATE VOLTAGE from adc
-  new_solar_voltage_drop_value = new_solar_voltage_drop_adc_value * 0.004887586;   //CALCULATE VOLTAGE from adc
+  new_solar_voltage_value = new_solar_voltage_adc_value * 0.0048828125;            //CALCULATE VOLTAGE from adc value. 5V / 1024 = 0.0048828125
+  new_solar_voltage_drop_value = new_solar_voltage_drop_adc_value * 0.0048828125;   //CALCULATE VOLTAGE from adc value. 5V / 1024 = 0.0048828125
 
-  solar_amps = ((new_solar_voltage_drop_value / 38) / 0.2); // was 45 when doing measurement but is now corrected to 38
-  solar_watt = solar_amps * new_solar_voltage_value * 1000;
-  new_solar_watt = (0.945 * new_solar_watt) + (0.0549 * solar_watt);
+  solar_amps = ((new_solar_voltage_drop_value / 39) / 0.2); // 0.2 is the value of the measure resistor. 39 is the amplification rate
+  solar_watt = solar_amps * new_solar_voltage_value * 1000; // the power is calculated using P = I * V
+  new_solar_watt = (0.95 * new_solar_watt) + (0.05 * solar_watt); // low pass filter to smoothen the value
   solar_watt_int = new_solar_watt;   // converts new_solar_watt to an int to send to the display
   
-  // Filter to smoothen the sensor values
-  newTiltUpVal = (0.945 * newTiltUpVal) + (0.0549 * tiltUpVal); // low pass filter to smoothen the value
-  newTiltDownVal = (0.945 * newTiltDownVal) + (0.0549 * tiltDownVal); // low pass filter to smoothen the value
-  newPanLeftVal = (0.945 * newPanLeftVal) + (0.0549 * panLeftVal);  // low pass filter to smoothen the value
-  newPanRightVal = (0.945 * newPanRightVal) + (0.0549 * panRightVal); // low pass filter to smoothen the value
-
   if(new_solar_watt > 0.2){ // if new_solar_watt is above 0.2
     isItDay = true;   // day is set to true
   }
@@ -203,8 +200,8 @@ void loop() {
     sampleCounter = 0;  // sampleCounter is reset to make new samples
 
     if(minCounter == 60){ // if minCounter is 60 then an hour has passed 
-      wattHourSum = wattMinSum / 60;  // calculating 
-      wattMinSum = 0;
+      wattHourSum = wattMinSum / 60;  // calculating watt hour sum
+      wattMinSum = 0; // reset counter
       minCounter = 0; // minCounter is reset to count to 60 mins again
       hourCounter++;  //hourCounter is incrementing to count the hours
 
@@ -245,7 +242,7 @@ void loop() {
           moveServoToPos(servoTiltID0, newServoTiltPos); // move the tilt servo to the new position
           servoTiltPos = newServoTiltPos;  // setting the newly set servo position as the old servo position
           } 
-      servoCounter = 0;
+      servoCounter = 0; // reset the counter
       }  
     
   if (displayCounter == 20){
@@ -255,7 +252,7 @@ void loop() {
       lcd.print(" TWD:"); // prints to the display
       lcd.print(wattDaySum);  // prints to the display
       lcd.print(" ");
-      lcd.print(hourCounter);
+      lcd.print(hourCounter); // prints to the display
       lcd.setCursor(0,1); // column_index, row_index. go to start of 2nd line
       lcd.print("Hr:"); // prints to the display
       lcd.print(wattHourSum);  // prints to the display
@@ -268,7 +265,7 @@ void loop() {
       displayCounter = 0;
       }
 
-/*
+/* // used for debugging displaying variables in the serial monitor
     if(serialCounter > 100){
 
       panpos_convert(servoPanPos);
@@ -301,7 +298,8 @@ void loop() {
       serialCounter = 0;
 
     }
-
+    
+// started on saving a day to the eeprom. More work has to be done for using this part properly.
     if(eepromCounter == 100){
       while (!eeprom_is_ready()); // Wait for EEPROM to be ready
       cli(); // disable/clear interupts
